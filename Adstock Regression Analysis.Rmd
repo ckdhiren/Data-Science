@@ -1,0 +1,806 @@
+---
+title: "Adstock Regression Analysis"
+author: "Dhiren"
+date: "31 July 2020"
+output: word_document
+---
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ggplot2)    #creative graphics
+#library(devtools)   #development tool
+#library(dplyr)      #data manipulation
+library(cowplot)    #ready theme for ggplot
+library(gridExtra)  #Title and/or annotation
+library(grid)       #Grid Graphic package
+library(gtools)     #assit in develop,maintain and update packages
+library(plyr)       #control over input output formats
+library(reshape2)   #reshaping data prior to analysis
+library(scales)     #gradient
+library(raster)     #for raster plot
+library(rasterVis)  #raster using ggplot
+library(rgdal)      #Geospatical data abstraction
+library(RColorBrewer)#Sensible color schemes
+library(gplots)     #tool for plotting
+library(sm)         #for calculating density for each dataset
+library(tseries)    #for Jarque-Bera Test and Kolmogorov Smirnov Test
+library(readxl)
+library(openxlsx)
+library(corrplot)
+library(corrgram)
+library(ISLR)
+library(boot)
+library(DAAG)
+options(warn=-1)
+options(max.print=1000000)
+```
+
+```{r}
+set.seed(4321)
+getwd()
+setwd("C:/Users/Dhiru/Desktop/data science")
+getwd()
+
+dataset <- read_excel("data2.xlsx")
+class(dataset)
+nrow(dataset)
+#37-2=35
+ncol(dataset)
+#13
+attach(dataset)
+
+
+#Removing one header and renaming each column
+
+
+names(dataset) <- as.matrix(dataset[1, ])
+dataset <- dataset[-1, ]
+dataset[] <- lapply(dataset, function(x) type.convert(as.character(x)))
+View(dataset)
+nrow(dataset)
+#36
+
+str(dataset)
+summary(dataset)
+
+
+#for(i in 1:nrow(dataset)){
+# date<- as.Date(as.numeric(dataset[i,1]), origin = "1899-12-30")
+#}
+#dataset$Month <-date
+#as.Date(42705, origin = "1899-12-30")
+#as.Date(as.numeric(dataset[1,1]), origin = "1899-12-30")
+
+#changing date format from excel to R
+for(i in 1:nrow(dataset)){
+  dataset[i,1] = toString(openxlsx::convertToDate(dataset[i,1]))
+  }
+
+
+
+View(dataset)
+#reversing data set datewise
+
+dataset <- dataset[36:1,]
+str(dataset)
+
+sapply(dataset[2],sd)
+sapply(dataset[3],sd)
+sapply(dataset[4],sd)
+sapply(dataset[5],sd)
+sapply(dataset[6],sd)
+sapply(dataset[7],sd)
+sapply(dataset[8],sd)
+sapply(dataset[9],sd)
+sapply(dataset[10],sd)
+sapply(dataset[11],sd)
+sapply(dataset[12],sd)
+sapply(dataset[13],sd)
+
+
+par(mfrow=c(2,2))
+
+boxplot(dataset[,2:5],names = c("Magazine","Newspaper","Radio","OOH"),col = "blue")
+
+boxplot(dataset[,6:9],names = c("TV","Search","Display","Social"),col = "blue")
+
+boxplot(dataset[,10:12],names = c("Price1","Price2","Price3"),col = "blue")
+
+boxplot(dataset[,13],names = c("Sales"),col = "blue",xlab="Sales")
+
+
+#str(dataset$Month)
+par(mfrow=c(2,2))
+#dataset[1,1]
+
+magazine<-ts(dataset[,2],frequency = 12, start = c(2016,4)) 
+#plot.ts(magazine,col='red',xlab = "Year, Month")
+
+newspaper<-ts(dataset[,3],frequency = 12, start = c(2016,4))
+#plot(newspaper,col='red',xlab = "Year, Month")
+
+radio<-ts(dataset[,4],frequency = 12, start = c(2016,4))
+#plot(radio,col='red',xlab = "Year, Month")
+
+ooh<-ts(dataset[,5],frequency = 12, start = c(2016,4))
+#plot(ooh,col='red',xlab = "Year, Month")
+
+par(mfrow=c(2,2))
+
+tv<-ts(dataset[,6],frequency = 12, start = c(2016,4))
+#plot(tv,col='red',xlab = "Year, Month")
+
+search<-ts(dataset[,7],frequency = 12, start = c(2016,4))
+#plot(search,col='red',xlab = "Year, Month")
+
+display<-ts(dataset[,8],frequency = 12, start = c(2016,4))
+#plot(display,col='red',xlab = "Year, Month")
+
+social<-ts(dataset[,9],frequency = 12, start = c(2016,4))
+#plot(social,col='red',xlab = "Year, Month")
+
+par(mfrow=c(1,1))
+sales<-ts(dataset[,13],frequency = 12, start = c(2016,4))
+#plot(sales,col='blue',xlab = "Year, Month")
+```
+timeseries<-cbind(magazine,newspaper)
+timeseries<-cbind(timeseries,radio)
+timeseries<-cbind(timeseries,ooh)
+timeseries<-cbind(timeseries,tv)
+timeseries<-cbind(timeseries,search)
+timeseries<-cbind(timeseries,display)
+timeseries<-cbind(timeseries,social)
+timeseries1<-cbind(timeseries,dataset$Month)
+colnames(timeseries)<-c('magazine','newspaper','radio','ooh','tv','search','display','social')
+View(timeseries1)
+colnames(timeseries1)<-c('magazine','newspaper','radio','ooh','tv','search','display','social','month')
+#ts.plot(timeseries1[1])
+```{r}
+dataset <- as.data.frame(dataset)
+
+
+
+corrgram(dataset,main="Adstock Data",lower.panel=panel.pts, upper.panel=panel.conf,
+         diag.panel=panel.density)
+
+corrgram(dataset,main="Adstock Data", upper.panel=panel.cor)
+
+
+
+
+dataset2<-dataset[complete.cases(dataset),]
+
+```
+
+
+```{r}
+par(mfrow=c(2,2))
+  rmax <- 0
+	corrmax <- -1
+	rates <- seq(0.00, 1.00, by = 0.01)
+	corrs <- vector()
+	adstock <- stats::filter(dataset2[,2], filter=r, method = "recursive")
+  #cor(adstock,dataset2[,13])
+	for(r in rates){
+		adstock <- stats::filter(dataset2[,2], filter=r, method = "recursive")
+		corr <- cor(adstock,dataset2[,13])
+		if(corr>corrmax){
+			corrmax <- corr
+			rmax <- r
+		}
+		corrs <- append(corrs, corr)
+	}
+	
+	plot(rates,corrs,xlab="rates",ylab="Magazine")
+	rmax
+	#magazine rate 0.04
+	
+	rmax <- 0
+	corrmax <- -1
+	rates <- seq(0.00, 1.00, by = 0.01)
+	corrs <- vector()
+	adstock <- stats::filter(dataset2[,3], filter=r, method = "recursive")
+  #cor(adstock,dataset2[,13])
+	for(r in rates){
+		adstock <- stats::filter(dataset2[,3], filter=r, method = "recursive")
+		corr <- cor(adstock,dataset2[,13])
+		if(corr>corrmax){
+			corrmax <- corr
+			rmax <- r
+		}
+		corrs <- append(corrs, corr)
+	}
+	
+	plot(rates,corrs,xlab="rates",ylab="Newspaper")
+	rmax
+	# newspaper rate 0
+	
+	rmax <- 0
+	corrmax <- -1
+	rates <- seq(0.00, 1.00, by = 0.01)
+	corrs <- vector()
+	adstock <- stats::filter(dataset2[,4], filter=r, method = "recursive")
+  #cor(adstock,dataset2[,13])
+	for(r in rates){
+		adstock <- stats::filter(dataset2[,4], filter=r, method = "recursive")
+		corr <- cor(adstock,dataset2[,13])
+		if(corr>corrmax){
+			corrmax <- corr
+			rmax <- r
+		}
+		corrs <- append(corrs, corr)
+	}
+	
+	plot(rates,corrs,xlab="rates",ylab="Radio")
+	rmax
+	# radio rate 0
+
+	rmax <- 0
+	corrmax <- -1
+	rates <- seq(0.00, 1.00, by = 0.01)
+	corrs <- vector()
+	adstock <- stats::filter(dataset2[,5], filter=r, method = "recursive")
+  #cor(adstock,dataset2[,13])
+	for(r in rates){
+		adstock <- stats::filter(dataset2[,5], filter=r, method = "recursive")
+		corr <- cor(adstock,dataset2[,13])
+		if(corr>corrmax){
+			corrmax <- corr
+			rmax <- r
+		}
+		corrs <- append(corrs, corr)
+	}
+	
+	plot(rates,corrs,xlab="rates",ylab="OOH")
+	rmax
+	# ooh rate 0
+	
+	rmax <- 0
+	corrmax <- -1
+	rates <- seq(0.00, 1.00, by = 0.01)
+	corrs <- vector()
+	adstock <- stats::filter(dataset2[,6], filter=r, method = "recursive")
+  #cor(adstock,dataset2[,13])
+	for(r in rates){
+		adstock <- stats::filter(dataset2[,6], filter=r, method = "recursive")
+		corr <- cor(adstock,dataset2[,13])
+		if(corr>corrmax){
+			corrmax <- corr
+			rmax <- r
+		}
+		corrs <- append(corrs, corr)
+	}
+	
+	plot(rates,corrs,xlab="rates",ylab="TV")
+	rmax
+	# tv rate 0
+	
+	rmax <- 0
+	corrmax <- -1
+	rates <- seq(0.00, 1.00, by = 0.01)
+	corrs <- vector()
+	adstock <- stats::filter(dataset2[,7], filter=r, method = "recursive")
+  #cor(adstock,dataset2[,13])
+	for(r in rates){
+		adstock <- stats::filter(dataset2[,7], filter=r, method = "recursive")
+		corr <- cor(adstock,dataset2[,13])
+		if(corr>corrmax){
+			corrmax <- corr
+			rmax <- r
+		}
+		corrs <- append(corrs, corr)
+	}
+	
+	plot(rates,corrs,xlab="rates",ylab="Search")
+	rmax
+	# search rate 1
+	
+	rmax <- 0
+	corrmax <- -1
+	rates <- seq(0.00, 1.00, by = 0.01)
+	corrs <- vector()
+	adstock <- stats::filter(dataset2[,8], filter=r, method = "recursive")
+  #cor(adstock,dataset2[,13])
+	for(r in rates){
+		adstock <- stats::filter(dataset2[,8], filter=r, method = "recursive")
+		corr <- cor(adstock,dataset2[,13])
+		if(corr>corrmax){
+			corrmax <- corr
+			rmax <- r
+		}
+		corrs <- append(corrs, corr)
+	}
+	
+	plot(rates,corrs,xlab="rates",ylab="Display")
+	rmax
+	# display rate 0
+	
+	rmax <- 0
+	corrmax <- -1
+	rates <- seq(0.00, 1.00, by = 0.01)
+	corrs <- vector()
+	adstock <- stats::filter(dataset2[,9], filter=r, method = "recursive")
+  #cor(adstock,dataset2[,13])
+	for(r in rates){
+		adstock <- stats::filter(dataset2[,9], filter=r, method = "recursive")
+		corr <- cor(adstock,dataset2[,13])
+		if(corr>corrmax){
+			corrmax <- corr
+			rmax <- r
+		}
+		corrs <- append(corrs, corr)
+	}
+	
+	plot(rates,corrs,xlab="rates",ylab="Social")
+	rmax
+	# social rate 0
+
+	
+adstock_rate <- 0.04
+max_memory   <- 2
+learn_rates <- rep(adstock_rate, max_memory+1) ^ c(0:max_memory)
+
+ad1.adstock <- as.numeric(stats::filter(c(rep(0, max_memory), dataset2[,2]), learn_rates, method="convolution"))
+#ad1.adstock <- function(x=dataset2[,2], rate=0.04){return(as.numeric(stats::filter(x=x, filter=rate, method="recursive")))}
+ad1.adstock <- ad1.adstock[!is.na(ad1.adstock)]
+# Graph Data
+plot(seq(1,length(dataset2[,2])), dataset2[,2], type="h", 
+     xlab="Time (in months)", ylab="Magazine", 
+     ylim=c(0, max(c(dataset2[,2], ad1.adstock))), 
+     frame.plot=FALSE)
+lines(ad1.adstock)
+
+adstock_rate <- 0
+ad2.adstock <- as.numeric(stats::filter(c(rep(0, max_memory), dataset2[,3]), learn_rates, method="convolution"))
+ad2.adstock <- ad2.adstock[!is.na(ad2.adstock)]
+# Graph Data
+plot(seq(1,length(dataset2[,3])), dataset2[,3], type="h", 
+     xlab="Time (in months)", ylab="Newspaper", 
+     ylim=c(0, max(c(dataset2[,3], ad2.adstock))), 
+     frame.plot=FALSE)
+lines(ad2.adstock)
+
+adstock_rate <- 0
+ad3.adstock <- as.numeric(stats::filter(c(rep(0, max_memory), dataset2[,4]), learn_rates, method="convolution"))
+ad3.adstock <- ad3.adstock[!is.na(ad3.adstock)]
+# Graph Data
+plot(seq(1,length(dataset2[,4])), dataset2[,4], type="h", 
+     xlab="Time (in months)", ylab="Radio", 
+     ylim=c(0, max(c(dataset2[,4], ad3.adstock))), 
+     frame.plot=FALSE)
+lines(ad3.adstock)
+
+adstock_rate <- 0
+ad4.adstock <- as.numeric(stats::filter(c(rep(0, max_memory), dataset2[,5]), learn_rates, method="convolution"))
+ad4.adstock <- ad4.adstock[!is.na(ad4.adstock)]
+# Graph Data
+plot(seq(1,length(dataset2[,5])), dataset2[,5], type="h", 
+     xlab="Time (in months)", ylab="OOH", 
+     ylim=c(0, max(c(dataset2[,5], ad4.adstock))), 
+     frame.plot=FALSE)
+lines(ad4.adstock)
+
+
+adstock_rate <- 0
+ad5.adstock <- as.numeric(stats::filter(c(rep(0, max_memory), dataset2[,6]), learn_rates, method="convolution"))
+ad5.adstock <- ad5.adstock[!is.na(ad5.adstock)]
+# Graph Data
+plot(seq(1,length(dataset2[,6])), dataset2[,6], type="h", 
+     xlab="Time (in months)", ylab="TV", 
+     ylim=c(0, max(c(dataset2[,6], ad5.adstock))), 
+     frame.plot=FALSE)
+lines(ad5.adstock)
+
+
+adstock_rate <- 1
+ad6.adstock <- as.numeric(stats::filter(c(rep(0, max_memory), dataset2[,7]), learn_rates, method="convolution"))
+ad6.adstock <- ad6.adstock[!is.na(ad6.adstock)]
+# Graph Data
+plot(seq(1,length(dataset2[,7])), dataset2[,7], type="h", 
+     xlab="Time (in months)", ylab="Search", 
+     ylim=c(0, max(c(dataset2[,7], ad6.adstock))), 
+     frame.plot=FALSE)
+lines(ad6.adstock)
+
+
+adstock_rate <- 0
+ad7.adstock <- as.numeric(stats::filter(c(rep(0, max_memory), dataset2[,8]), learn_rates, method="convolution"))
+ad7.adstock <- ad7.adstock[!is.na(ad7.adstock)]
+# Graph Data
+plot(seq(1,length(dataset2[,8])), dataset2[,8], type="h", 
+     xlab="Time (in months)", ylab="Display", 
+     ylim=c(0, max(c(dataset2[,8], ad7.adstock))), 
+     frame.plot=FALSE)
+lines(ad7.adstock)
+
+
+adstock_rate <- 0
+ad8.adstock <- as.numeric(stats::filter(c(rep(0, max_memory), dataset2[,9]), learn_rates, method="convolution"))
+ad8.adstock <- ad8.adstock[!is.na(ad8.adstock)]
+# Graph Data
+plot(seq(1,length(dataset2[,9])), dataset2[,9], type="h", 
+     xlab="Time (in months)", ylab="Social", 
+     ylim=c(0, max(c(dataset2[,9], ad8.adstock))), 
+     frame.plot=FALSE)
+lines(ad8.adstock)
+
+
+
+
+
+
+nrow(dataset2)
+#trend = nrow(dataset2)
+trend = 1:35
+View(dataset2)
+
+
+
+modFit.3 <- glm(dataset2[,13]~trend+ad1.adstock+ad2.adstock+ad3.adstock+ad4.adstock+ad5.adstock+ad6.adstock+ad7.adstock+ad8.adstock+dataset2$Price1 + dataset2$Price2 + dataset2$Price3)
+
+summary(modFit.3)
+plot(modFit.3)
+
+anova(modFit.3)
+
+#mse_loocv <- cv.glm(dataset2,modFit.3)$delta[1]
+mse_loocv <- cv.glm(dataset2,modFit.3,K=2)$delta[1]
+
+mse_loocv
+
+summary(mse_loocv)
+
+par(mfrow=c(1,1))
+# Graph Data
+plot(seq(1,length(dataset2[,13])), dataset2[,13], type="h", 
+     xlab="Time (in months)", ylab="Sales", 
+     ylim=c(0, max(c(dataset2[,13], modFit.3$fitted.values))), 
+     frame.plot=FALSE)
+lines(modFit.3$y)
+lines(modFit.3$fitted.values,col='red')
+legend("topright", inset=0, title="Sales Predicted",
+   c("Predicted"), fill="red", horiz=TRUE,box.lty=0)
+	
+```
+
+```{r}
+
+#sales return on ad spend 
+
+Roas = dataset2$Sales / (magazine + newspaper + radio + ooh + tv + search + display + social)
+
+Roas_pred = modFit.3$fitted.values / (magazine + newspaper + radio + ooh + tv + search + display + social)
+
+summary(Roas)
+
+summary(Roas_pred)
+
+par(mfrow=c(1,2))
+boxplot(Roas,names = c("Roas"),col = "blue",xlab = "Roas")
+boxplot(Roas_pred,names = c("Roas_pred"),col = "red", xlab = 'Roas_pred')
+par(mfrow=c(1,1))
+
+
+
+seqplot.ts(Roas,Roas_pred, colx = 'black', coly = 'red',typex='l',typey='l',xlab='Time in month',ylab = 'Roas vs Roas_pred',main='Roas comparison')
+
+
+```
+
+
+#Calculating rate of Adstock
+model_magazine<- arima(magazine,order=c(1,0,0))
+model_magazine$coef
+#0.7670794
+
+model_newspaper<- arima(newspaper,order=c(1,0,0))
+model_newspaper$coef
+#1.159188e-02
+
+model_radio<- arima(radio,order=c(1,0,0))
+model_radio$coef
+#7.842217e-01
+
+model_ooh<- arima(ooh,order=c(1,0,0))
+model_ooh$coef
+#5.012274e-02
+
+model_tv<- arima(tv,order=c(1,0,0))
+model_tv$coef
+# 0.5812592
+
+model_search<- arima(search,order=c(1,0,0))
+model_search$coef
+#1.699707e-02
+
+model_display<- arima(display,order=c(1,0,0))
+model_display$coef
+#1.410361e-01
+
+model_social<- arima(social,order=c(1,0,0))
+model_social$coef
+#6.057506e-01
+
+ad1.adstock <- function(x=dataset2[,2], rate=0.76){return(as.numeric(stats::filter(x=x, filter=rate, method="recursive")))}
+ad2.adstock <- function(x=dataset2[,3], rate=0.011){return(as.numeric(stats::filter(x=x, filter=rate, method="recursive")))}
+ad3.adstock <- function(x=dataset2[,4], rate=0.78){return(as.numeric(stats::filter(x=x, filter=rate, method="recursive")))}
+ad4.adstock <- function(x=dataset2[,5], rate=0.05){return(as.numeric(stats::filter(x=x, filter=rate, method="recursive")))}
+ad5.adstock <- function(x=dataset2[,6], rate=0.58){return(as.numeric(stats::filter(x=x, filter=rate, method="recursive")))}
+ad6.adstock <- function(x=dataset2[,7], rate=0.017){return(as.numeric(stats::filter(x=x, filter=rate, method="recursive")))}
+ad7.adstock <- function(x=dataset2[,8], rate=0.14){return(as.numeric(stats::filter(x=x, filter=rate, method="recursive")))}
+ad8.adstock <- function(x=dataset2[,9], rate=0.61){return(as.numeric(stats::filter(x=x, filter=rate, method="recursive")))}
+
+
+
+
+nrow(dataset2)
+#trend = nrow(dataset2)
+trend = 1:35
+View(dataset2)
+
+modFit.3 <- cv.lm(data=dataset2,form.lm = formula( dataset2[,13]~trend+ad1.adstock()+ad2.adstock()+ad3.adstock()+ad4.adstock()+ad5.adstock()+ad6.adstock()+ad7.adstock()+ad8.adstock()+dataset2$Price1 + dataset2$Price2 + dataset2$Price3),m=1, dots = FALSE, seed=29,plotit=T)
+
+modFit.3 <- glm(dataset2[,13]~trend+ad1.adstock()+ad2.adstock()+ad3.adstock()+ad4.adstock()+ad5.adstock()+ad6.adstock()+ad7.adstock()+ad8.adstock()+dataset2$Price1 + dataset2$Price2 + dataset2$Price3)
+
+summary(modFit.3)
+plot(modFit.3)
+
+anova(modFit.3)
+
+mse_loocv <- cv.glm(dataset2,modFit.3)$delta[1]
+
+
+mse_loocv
+
+summary(mse_loocv)
+
+
+
+
+
+
+dataset2[2]<-scale(dataset2[2])
+dataset2[3]<-scale(dataset2[3])
+dataset2[4]<-scale(dataset2[4])
+dataset2[5]<-scale(dataset2[5])
+dataset2[6]<-scale(dataset2[6])
+dataset2[7]<-scale(dataset2[7])
+dataset2[8]<-scale(dataset2[8])
+dataset2[9]<-scale(dataset2[9])
+dataset2[10]<-scale(dataset2[10])
+dataset2[11]<-scale(dataset2[11])
+dataset2[12]<-scale(dataset2[12])
+dataset2[13]<-scale(dataset2[13])
+
+
+magazine<-ts(dataset2[,2],frequency = 12, start = c(2016,4)) 
+#plot.ts(magazine,col='red',xlab = "Year, Month")
+
+newspaper<-ts(dataset2[,3],frequency = 12, start = c(2016,4))
+#plot(newspaper,col='red',xlab = "Year, Month")
+
+radio<-ts(dataset2[,4],frequency = 12, start = c(2016,4))
+#plot(radio,col='red',xlab = "Year, Month")
+
+ooh<-ts(dataset2[,5],frequency = 12, start = c(2016,4))
+#plot(ooh,col='red',xlab = "Year, Month")
+
+#par(mfrow=c(2,2))
+
+tv<-ts(dataset2[,6],frequency = 12, start = c(2016,4))
+#plot(tv,col='red',xlab = "Year, Month")
+
+search<-ts(dataset2[,7],frequency = 12, start = c(2016,4))
+#plot(search,col='red',xlab = "Year, Month")
+
+display<-ts(dataset2[,8],frequency = 12, start = c(2016,4))
+#plot(display,col='red',xlab = "Year, Month")
+
+social<-ts(dataset2[,9],frequency = 12, start = c(2016,4))
+#plot(social,col='red',xlab = "Year, Month")
+
+#par(mfrow=c(1,1))
+sales<-ts(dataset2[,13],frequency = 12, start = c(2016,4))
+#plot(sales,col='blue',xlab = "Year, Month")
+
+model_magazine<- arima(magazine,order=c(1,0,0))
+model_magazine$coef
+# 0.76562914 
+
+model_newspaper<- arima(newspaper,order=c(1,0,0))
+model_newspaper$coef
+#0.0088094801
+
+model_radio<- arima(radio,order=c(1,0,0))
+model_radio$coef
+#0.7708118
+
+model_ooh<- arima(ooh,order=c(1,0,0))
+model_ooh$coef
+#0.0470632289
+
+model_tv<- arima(tv,order=c(1,0,0))
+model_tv$coef
+# 0.57877294
+
+model_search<- arima(search,order=c(1,0,0))
+model_search$coef
+#0.050634845
+
+model_display<- arima(display,order=c(1,0,0))
+model_display$coef
+#0.117118041
+
+model_social<- arima(social,order=c(1,0,0))
+model_social$coef
+#0.601925525
+
+
+
+
+ad1.adstock <- function(x=dataset2[,2], rate=0.76){return(as.numeric(stats::filter(x=x, filter=rate, method="recursive")))}
+ad2.adstock <- function(x=dataset2[,3], rate=0.008){return(as.numeric(stats::filter(x=x, filter=rate, method="recursive")))}
+ad3.adstock <- function(x=dataset2[,4], rate=0.78){return(as.numeric(stats::filter(x=x, filter=rate, method="recursive")))}
+ad4.adstock <- function(x=dataset2[,5], rate=0.05){return(as.numeric(stats::filter(x=x, filter=rate, method="recursive")))}
+ad5.adstock <- function(x=dataset2[,6], rate=0.58){return(as.numeric(stats::filter(x=x, filter=rate, method="recursive")))}
+ad6.adstock <- function(x=dataset2[,7], rate=0.051){return(as.numeric(stats::filter(x=x, filter=rate, method="recursive")))}
+ad7.adstock <- function(x=dataset2[,8], rate=0.12){return(as.numeric(stats::filter(x=x, filter=rate, method="recursive")))}
+ad8.adstock <- function(x=dataset2[,9], rate=0.60){return(as.numeric(stats::filter(x=x, filter=rate, method="recursive")))}
+
+
+nrow(dataset2)
+#trend = nrow(dataset2)
+trend = 1:35
+View(dataset2)
+
+#ad1.adstock()
+
+modFit.3 <- glm(dataset2[,13]~trend+ad1.adstock()+ad2.adstock()+ad3.adstock()+ad4.adstock()+ad5.adstock()+ad6.adstock()+ad7.adstock()+ad8.adstock() + dataset2$Price2 + dataset2$Price3)
+
+
+
+summary(modFit.3)
+plot(modFit.3)
+
+anova(modFit.3)
+
+mse_loocv <- cv.glm(dataset2,modFit.3)$delta[1]
+
+
+mse_loocv
+
+summary(mse_loocv)
+
+modFit.3$coefficients
+modFit.3$fitted.values
+dataset2[,13]
+
+
+
+
+
+
+adstock_rate <- 0.50
+max_memory   <- 2
+learn_rates <- rep(adstock_rate, max_memory+1) ^ c(0:max_memory)
+
+ad1.adstock <- as.numeric(stats::filter(c(rep(0, max_memory), dataset2[,2]), learn_rates, method="convolution"))
+
+ad1.adstock <- ad1.adstock[!is.na(ad1.adstock)]
+# Graph Data
+plot(seq(1,length(dataset2[,2])), dataset2[,2], type="h", 
+     xlab="Time (in months)", ylab="Magazine", 
+     ylim=c(0, max(c(dataset2[,2], ad1.adstock))), 
+     frame.plot=FALSE)
+lines(ad1.adstock)
+
+
+ad2.adstock <- as.numeric(stats::filter(c(rep(0, max_memory), dataset2[,3]), learn_rates, method="convolution"))
+ad2.adstock <- ad2.adstock[!is.na(ad2.adstock)]
+# Graph Data
+plot(seq(1,length(dataset2[,3])), dataset2[,3], type="h", 
+     xlab="Time (in months)", ylab="Newspaper", 
+     ylim=c(0, max(c(dataset2[,3], ad2.adstock))), 
+     frame.plot=FALSE)
+lines(ad2.adstock)
+
+
+ad3.adstock <- as.numeric(stats::filter(c(rep(0, max_memory), dataset2[,4]), learn_rates, method="convolution"))
+ad3.adstock <- ad3.adstock[!is.na(ad3.adstock)]
+# Graph Data
+plot(seq(1,length(dataset2[,4])), dataset2[,4], type="h", 
+     xlab="Time (in months)", ylab="Radio", 
+     ylim=c(0, max(c(dataset2[,4], ad3.adstock))), 
+     frame.plot=FALSE)
+lines(ad3.adstock)
+
+ad4.adstock <- as.numeric(stats::filter(c(rep(0, max_memory), dataset2[,5]), learn_rates, method="convolution"))
+ad4.adstock <- ad4.adstock[!is.na(ad4.adstock)]
+# Graph Data
+plot(seq(1,length(dataset2[,5])), dataset2[,5], type="h", 
+     xlab="Time (in months)", ylab="OOH", 
+     ylim=c(0, max(c(dataset2[,5], ad4.adstock))), 
+     frame.plot=FALSE)
+lines(ad4.adstock)
+
+
+ad5.adstock <- as.numeric(stats::filter(c(rep(0, max_memory), dataset2[,6]), learn_rates, method="convolution"))
+ad5.adstock <- ad5.adstock[!is.na(ad5.adstock)]
+# Graph Data
+plot(seq(1,length(dataset2[,6])), dataset2[,6], type="h", 
+     xlab="Time (in months)", ylab="TV", 
+     ylim=c(0, max(c(dataset2[,6], ad5.adstock))), 
+     frame.plot=FALSE)
+lines(ad5.adstock)
+
+ad6.adstock <- as.numeric(stats::filter(c(rep(0, max_memory), dataset2[,7]), learn_rates, method="convolution"))
+ad6.adstock <- ad6.adstock[!is.na(ad6.adstock)]
+# Graph Data
+plot(seq(1,length(dataset2[,7])), dataset2[,7], type="h", 
+     xlab="Time (in months)", ylab="Search", 
+     ylim=c(0, max(c(dataset2[,7], ad6.adstock))), 
+     frame.plot=FALSE)
+lines(ad6.adstock)
+
+ad7.adstock <- as.numeric(stats::filter(c(rep(0, max_memory), dataset2[,8]), learn_rates, method="convolution"))
+ad7.adstock <- ad7.adstock[!is.na(ad7.adstock)]
+# Graph Data
+plot(seq(1,length(dataset2[,8])), dataset2[,8], type="h", 
+     xlab="Time (in months)", ylab="Display", 
+     ylim=c(0, max(c(dataset2[,8], ad7.adstock))), 
+     frame.plot=FALSE)
+lines(ad7.adstock)
+
+ad8.adstock <- as.numeric(stats::filter(c(rep(0, max_memory), dataset2[,9]), learn_rates, method="convolution"))
+ad8.adstock <- ad8.adstock[!is.na(ad8.adstock)]
+# Graph Data
+plot(seq(1,length(dataset2[,9])), dataset2[,9], type="h", 
+     xlab="Time (in months)", ylab="Social", 
+     ylim=c(0, max(c(dataset2[,9], ad8.adstock))), 
+     frame.plot=FALSE)
+lines(ad8.adstock)
+
+
+
+nrow(dataset2)
+#trend = nrow(dataset2)
+trend = 1:35
+View(dataset2)
+
+
+library(DAAG)
+#library(rlang)
+
+#train_control <- trainControl(method="cv", number=10,verboseIter = TRUE)
+modFit.3 <- cv.lm(dataset2[,13]~trend+ad1.adstock+ad2.adstock+ad3.adstock+ad4.adstock+ad5.adstock+ad6.adstock+ad7.adstock+ad8.adstock + dataset2$Price2 + dataset2$Price3,m=10,plotit=F)
+
+
+
+summary(modFit.3)
+#plot(modFit.3)
+
+#anova(modFit.3)
+
+#mse_loocv <- cv.glm(dataset2,modFit.3)$delta[1]
+
+
+#mse_loocv
+
+#summary(mse_loocv)
+
+modFit.3$coefficients
+modFit.3$fitted.values
+
+# Graph Data
+plot(seq(1,length(dataset2[,13])), dataset2[,13], type="h", 
+     xlab="Time (in months)", ylab="Sales", 
+     ylim=c(0, max(c(dataset2[,13], modFit.3$fitted.values))), 
+     frame.plot=FALSE)
+lines(modFit.3$fitted.values)
+
+
+
+
+
+
+
